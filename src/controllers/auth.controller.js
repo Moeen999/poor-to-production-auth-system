@@ -53,7 +53,34 @@ async function register(req, res) {
     res.status(500).json({
       message: error.message || "Error creating account",
     });
+    console.log(error);
   }
 }
 
-export { register };
+async function getMe(req, res) {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      res.status(401).json({
+        message: "Un-Authorized! token not found",
+      });
+    }
+
+    const decodedToken = jwt.verify(token, configs.JWT_SECRET);
+    const user = await userModel.findById(decodedToken.id);
+    res.status(200).json({
+      message: "user fetched successfully!",
+      user: {
+        username: user.username,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || "Error creating account",
+    });
+    console.log(error);
+  }
+}
+
+export { register, getMe };
