@@ -5,5 +5,6 @@ const authRouter = express.Router();
 
 authRouter.post("/register", authController.register);
 authRouter.get("/get-me", authController.getMe);
+authRouter.get("/refresh-token", authController.refreshToken);
 
 export default authRouter;
