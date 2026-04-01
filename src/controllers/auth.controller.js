@@ -105,4 +105,53 @@ async function getMe(req, res) {
   }
 }
 
-export { register, getMe };
+async function refreshToken(req, res) {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({
+        message: "Un-Authorized! refresh token not found",
+      });
+    }
+
+    const decodedToken = jwt.verify(refreshToken, configs.JWT_SECRET);
+    const accessToken = jwt.sign(
+      {
+        id: decodedToken.id,
+      },
+      configs.JWT_SECRET,
+      {
+        expiresIn: "15m",
+      },
+    );
+
+    const newRefreshToken = jwt.sign(
+      {
+        id: decodedToken.id,
+      },
+      configs.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.status(200).json({
+      message: "Access token refreshed succesfully",
+      accessToken,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || "Error creating account",
+    });
+    console.log(error);
+  }
+}
+
+export { register, getMe, refreshToken };
