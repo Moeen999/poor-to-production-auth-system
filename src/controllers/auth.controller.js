@@ -31,15 +31,32 @@ async function register(req, res) {
       password: hashedPass,
     });
 
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
       {
         id: user._id,
       },
       configs.JWT_SECRET,
       {
-        expiresIn: "1d",
+        expiresIn: "15m",
       },
     );
+
+    const refreshToken = jwt.sign(
+      {
+        id: user._id,
+      },
+      configs.JWT_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true, //! this line refers to that the script of js which will run on the browser side will never be able to read the cookies data
+      secure: true,
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     res.status(201).json({
       message: "User registered successfully!",
@@ -47,7 +64,7 @@ async function register(req, res) {
         username: user.username,
         email: user.email,
       },
-      token,
+      accessToken,
     });
   } catch (error) {
     res.status(500).json({
@@ -68,6 +85,11 @@ async function getMe(req, res) {
 
     const decodedToken = jwt.verify(token, configs.JWT_SECRET);
     const user = await userModel.findById(decodedToken.id);
+    if (!user) {
+      return res.status(401).json({
+        message: "User not found",
+      });
+    }
     res.status(200).json({
       message: "user fetched successfully!",
       user: {
