@@ -2,6 +2,7 @@ import userModel from "../models/user.model.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import configs from "../config/config.js";
+import sessionModel from "../models/session.model.js";
 
 async function register(req, res) {
   try {
@@ -31,16 +32,6 @@ async function register(req, res) {
       password: hashedPass,
     });
 
-    const accessToken = jwt.sign(
-      {
-        id: user._id,
-      },
-      configs.JWT_SECRET,
-      {
-        expiresIn: "15m",
-      },
-    );
-
     const refreshToken = jwt.sign(
       {
         id: user._id,
@@ -48,6 +39,29 @@ async function register(req, res) {
       configs.JWT_SECRET,
       {
         expiresIn: "7d",
+      },
+    );
+
+    const refreshTokenHash = crypto
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
+    //! Sessions
+    const session = await sessionModel.create({
+      user: user._id,
+      refreshToken: refreshTokenHash,
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    const accessToken = jwt.sign(
+      {
+        id: user._id,
+        sessionId: session._id,
+      },
+      configs.JWT_SECRET,
+      {
+        expiresIn: "15m",
       },
     );
 
