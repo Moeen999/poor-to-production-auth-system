@@ -113,7 +113,7 @@ async function getMe(req, res) {
     });
   } catch (error) {
     res.status(500).json({
-      message: error.message || "Error creating account",
+      message: error.message || "Unknown Error Occured",
     });
     console.log(error);
   }
@@ -129,6 +129,23 @@ async function refreshToken(req, res) {
     }
 
     const decodedToken = jwt.verify(refreshToken, configs.JWT_SECRET);
+
+    const refreshTokenHash = crypto
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
+
+    const session = await sessionModel.findOne({
+      refreshToken: refreshTokenHash,
+      revoked: false,
+    });
+
+    if (!session) {
+      return res.status(401).json({
+        message: "Invalid refresh token",
+      });
+    }
+
     const accessToken = jwt.sign(
       {
         id: decodedToken.id,
@@ -149,6 +166,13 @@ async function refreshToken(req, res) {
       },
     );
 
+    const newRefreshTokenHash = crypto
+      .createHash("sha256")
+      .update(newRefreshToken)
+      .digest("hex");
+    session.refreshToken = newRefreshTokenHash;
+    await session.save();
+
     res.cookie("refreshToken", newRefreshToken, {
       httpOnly: true,
       secure: true,
@@ -162,10 +186,52 @@ async function refreshToken(req, res) {
     });
   } catch (error) {
     res.status(500).json({
-      message: error.message || "Error creating account",
+      message: error.message || "Unknown Error Occured",
     });
     console.log(error);
   }
 }
 
-export { register, getMe, refreshToken };
+async function logout(req, res) {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        message: "Refresh token not found!",
+      });
+    }
+
+    const refreshTokenHash = crypto
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
+
+    const session = await sessionModel.findOne({
+      refreshToken: refreshTokenHash,
+      revoked: false,
+    });
+
+    if (!session) {
+      return res.status(400).json({
+        message: "Session not found || Invalid Refresh Token!",
+      });
+    }
+
+    session.revoked = true;
+    await session.save();
+
+    res.clearCookie("refreshToken");
+
+    res.status(200).json({
+      message: "Logged Out Successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || "Unknown Error Occured",
+    });
+    console.log(error);
+  }
+}
+
+export { register, getMe, refreshToken, logout };
