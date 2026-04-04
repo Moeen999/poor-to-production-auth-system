@@ -3,6 +3,9 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import configs from "../config/config.js";
 import sessionModel from "../models/session.model.js";
+import { generateOtp, generateOtpHtml } from "../utils/utils.js";
+import otpModel from "../models/otp.model.js";
+import { sendEmail } from "../services/email.service.js";
 
 async function register(req, res) {
   try {
@@ -32,44 +35,63 @@ async function register(req, res) {
       password: hashedPass,
     });
 
-    const refreshToken = jwt.sign(
-      {
-        id: user._id,
-      },
-      configs.JWT_SECRET,
-      {
-        expiresIn: "7d",
-      },
-    );
+    // ! Commenting below because untill n unless the user is not verified we cannot generate the token and send in the cookies
+    // const refreshToken = jwt.sign(
+    //   {
+    //     id: user._id,
+    //   },
+    //   configs.JWT_SECRET,
+    //   {
+    //     expiresIn: "7d",
+    //   },
+    // );
 
-    const refreshTokenHash = crypto
-      .createHash("sha256")
-      .update(refreshToken)
-      .digest("hex");
-    //! Sessions
-    const session = await sessionModel.create({
+    // const refreshTokenHash = crypto
+    //   .createHash("sha256")
+    //   .update(refreshToken)
+    //   .digest("hex");
+    // //! Sessions
+    // const session = await sessionModel.create({
+    //   user: user._id,
+    //   refreshToken: refreshTokenHash,
+    //   ip: req.ip,
+    //   userAgent: req.headers["user-agent"],
+    // });
+
+    // const accessToken = jwt.sign(
+    //   {
+    //     id: user._id,
+    //     sessionId: session._id,
+    //   },
+    //   configs.JWT_SECRET,
+    //   {
+    //     expiresIn: "15m",
+    //   },
+    // );
+
+    // res.cookie("refreshToken", refreshToken, {
+    //   httpOnly: true, //! this line refers to that the script of js which will run on the browser side will never be able to read the cookies data
+    //   secure: true,
+    //   sameSite: "strict",
+    //   maxAge: 7 * 24 * 60 * 60 * 1000,
+    // });
+
+    const otp = generateOtp();
+    const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+
+    await otpModel.create({
+      email: user.email,
       user: user._id,
-      refreshToken: refreshTokenHash,
-      ip: req.ip,
-      userAgent: req.headers["user-agent"],
+      otpHash,
     });
 
-    const accessToken = jwt.sign(
-      {
-        id: user._id,
-        sessionId: session._id,
-      },
-      configs.JWT_SECRET,
-      {
-        expiresIn: "15m",
-      },
-    );
+    const html = generateOtpHtml(otp);
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true, //! this line refers to that the script of js which will run on the browser side will never be able to read the cookies data
-      secure: true,
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+    await sendEmail({
+      email,
+      subject: "Your OTP Code",
+      text: `Your OTP code is ${otp}`,
+      html,
     });
 
     res.status(201).json({
@@ -77,8 +99,9 @@ async function register(req, res) {
       user: {
         username: user.username,
         email: user.email,
+        isVerified: user.isVerified,
       },
-      accessToken,
+      // accessToken,
     });
   } catch (error) {
     res.status(500).json({
@@ -96,6 +119,12 @@ async function login(req, res) {
     if (!user) {
       return res.status(401).json({
         message: "User not found",
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(401).json({
+        message: "Please verify your email before logging in.",
       });
     }
 
@@ -348,4 +377,46 @@ async function logoutFromAllDevices(req, res) {
   }
 }
 
-export { register, login, getMe, refreshToken, logout, logoutFromAllDevices };
+async function verifyEmail(req, res) {
+  try {
+    const { email, otp } = req.body;
+    const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+    const otpRecord = await otpModel.findOne({ email, otpHash });
+
+    if (!otpRecord) {
+      return res.status(400).json({
+        message: "Invalid OTP",
+      });
+    }
+
+    const user = await userModel.findByIdAndUpdate(otpRecord.user, {
+      isVerified: true,
+    });
+
+    await otpModel.deleteMany({ user: otpRecord.user });
+
+    res.status(200).json({
+      message: "Email verified successfully!",
+      user: {
+        username: user.username,
+        email: user.email,
+        isVerified: user.isVerified,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || "Unknown Error Occured",
+    });
+    console.log(error);
+  }
+}
+
+export {
+  register,
+  login,
+  getMe,
+  refreshToken,
+  logout,
+  logoutFromAllDevices,
+  verifyEmail,
+};
